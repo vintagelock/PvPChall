@@ -69,6 +69,7 @@ local DB_DEFAULTS = {
 
     bracketFilter   = "best",  -- "best" | "2v2" | "3v3"
     ratingThreshold = 1800,
+    debugMode       = false,
     activeRole      = "healer",
     showUnplayed    = true,    -- show specs with 0 rating
     sortAlpha       = false,   -- sort alphabetically instead of rating-desc
@@ -113,6 +114,11 @@ local function GetBestRating()
 end
 
 local function GetRatingForSpec(specID)
+    if db.debugMode then
+        -- Deterministic fake rating seeded by specID so it's consistent
+        local fake = (specID * 137 + 421) % 1200 + 1200
+        return fake
+    end
     local entry = db.ratings[specID]
     if not entry then return 0 end
     local f = db.bracketFilter
@@ -311,6 +317,9 @@ local function RefreshOverlay(self)
     end
     for _, r in ipairs(self.rowPool) do r:Hide() end
 
+    -- Debug watermark
+    if self.debugLabel then self.debugLabel:SetShown(db.debugMode) end
+
     -- Title
     local titleH = db.titleVisible and TITLE_H or 0
     if self.titleText then
@@ -355,21 +364,22 @@ local function RefreshOverlay(self)
         row.label:SetPoint("LEFT",  row.icon,   "RIGHT", 6, 0)
         row.label:SetPoint("RIGHT", row.tick,   "LEFT",  -54, 0)
 
-        -- Tick or rating
+        -- Tick or cross
         local done = data.rating >= threshold
+        local hasRating = data.rating > 0
         if done then
             row.tick:SetTexture(TICK_ICON)
             row.tick:Show()
             row.ratingText:SetText(string.format("|cff00ff96%d|r", data.rating))
+        elseif hasRating then
+            row.tick:SetTexture(CROSS_ICON)
+            row.tick:Show()
+            row.ratingText:SetText(string.format("|cffaaaaaa%d|r", data.rating))
         else
             row.tick:Hide()
-            if data.rating > 0 then
-                row.ratingText:SetText(string.format("|cffaaaaaa%d|r", data.rating))
-            else
-                row.ratingText:SetText("|cff555555-----|r")
-            end
+            row.ratingText:SetText("|cff555555-----|r")
         end
-        row.ratingText:SetPoint("RIGHT", row, "RIGHT", done and -24 or -4, 0)
+        row.ratingText:SetPoint("RIGHT", row, "RIGHT", (done or hasRating) and -24 or -4, 0)
 
         row:Show()
         totalH = totalH + rowH + ROW_GAP
@@ -487,6 +497,11 @@ local function CreateOverlay()
     f.emptyLabel = f:CreateFontString(nil, "OVERLAY", "GameFontDisable")
     f.emptyLabel:SetText("No specs to show")
     f.emptyLabel:Hide()
+
+    f.debugLabel = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    f.debugLabel:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -6, 4)
+    f.debugLabel:SetText("|cffff4444DEBUG|r")
+    f.debugLabel:Hide()
 
     f.rowPool    = {}
     f.dirty      = true
@@ -933,6 +948,14 @@ end
 local function BuildTabData(tab)
     local x, y = S_PAD, -S_PAD
 
+    SectionHead(tab, "Debug", x, y); y = y - S_HEAD
+
+    local debugChk = MakeCheck(tab, "Debug mode (shows fake ratings when no data recorded)", x + 8, y, function(checked)
+        db.debugMode = checked
+        DirtyOverlay()
+    end)
+    y = y - S_ITEM - S_SEC
+
     SectionHead(tab, "Export", x, y); y = y - S_HEAD
 
     local expDesc = tab:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
@@ -1006,7 +1029,7 @@ local function BuildTabData(tab)
         end
     end)
 
-    tab.Sync = function() end
+    tab.Sync = function() debugChk:SetChecked(db.debugMode) end
 end
 
 -- ---------------------------------------------------------------------------
